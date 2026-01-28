@@ -387,6 +387,7 @@
         // Если пользователь нажал на само тело уведомления
         n.onclick = () => {
           window.focus();
+          triggerEmojiAnimation();
           stop_everything();
           n.close();
         };
@@ -471,7 +472,6 @@ function finish() {
       history.push(session);
       localStorage.setItem('pomo_history', JSON.stringify(history));
       
-      triggerEmojiAnimation();
       renderToday();
     }
 
@@ -658,7 +658,10 @@ function renderFullHistory() {
       start();
     };
 
-    el.btn_ok.onclick = stop_everything;
+    el.btn_ok.onclick = () => {
+          triggerEmojiAnimation();
+          stop_everything();
+        };
 
     const sync_input = () => {
       if (!config.is_active) {
