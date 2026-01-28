@@ -329,6 +329,10 @@
       setup_ui: document.getElementById('setup_ui')
     };
 
+    // Звуковые файлы
+    const soundGo = new Audio('go.mp3');
+    const soundWin = new Audio('terwin.mp3');
+
     /**
      * Форматирование времени и обновление заголовка
      */
@@ -403,7 +407,7 @@
      * Основной цикл таймера
      */
     function start() {
-      clearInterval(config.timer_interval); // Очистка старого интервала перед запуском нового
+      clearInterval(config.timer_interval);
       if (!config.is_paused) {
         const m = parseInt(el.min.value) || 0;
         const s = parseInt(el.sec.value) || 0;
@@ -411,6 +415,9 @@
         config.current_seconds = config.total_seconds;
         
         if (config.total_seconds <= 0) return;
+
+        // Воспроизводим звук старта
+        soundGo.play().catch(e => console.log("Audio play blocked"));
         
         // Запрос прав на уведомления при старте
         if (Notification.permission !== 'granted') {
@@ -448,7 +455,11 @@
 function finish() {
       clearInterval(config.timer_interval);
       config.is_active = false;
-      saveSessionRecord(); // Сохраняем строго один раз при срабатывании
+      saveSessionRecord(); 
+      
+      // Воспроизводим победный звук один раз
+      soundWin.play().catch(e => console.log("Audio play blocked"));
+      
       play_beep();
       send_notification();
       
