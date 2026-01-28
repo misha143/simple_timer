@@ -332,6 +332,7 @@
     // Звуковые файлы
     const soundGo = new Audio('go.mp3');
     const soundWin = new Audio('terwin.mp3');
+    const c4_explode1 = new Audio('c4_explode1.mp3');
 
     /**
      * Форматирование времени и обновление заголовка
@@ -457,6 +458,7 @@ function finish() {
       config.is_active = false;
       saveSessionRecord(); 
       
+      c4_explode1.play().catch(e => console.log("Audio play blocked"));
       // Воспроизводим победный звук один раз
       soundWin.play().catch(e => console.log("Audio play blocked"));
       
