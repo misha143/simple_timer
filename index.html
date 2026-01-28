@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Таймер</title>
+  <style>
+    /* --- Сброс и базовые стили --- */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg_color: #f8fafc;
+      --card_bg: #ffffff;
+      --text_main: #0f172a;
+      --text_muted: #64748b;
+      --accent_color: #6366f1;
+      --accent_hover: #4f46e5;
+      --success_color: #10b981;
+      --danger_color: #ef4444;
+      --border_color: #e2e8f0;
+      --shadow_lg: 0 10px 15px -3px rgba(0,0,0,0.1);
+      --radius: 20px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg_color: #020617;
+        --card_bg: #1e293b;
+        --text_main: #f1f5f9;
+        --text_muted: #94a3b8;
+        --border_color: #334155;
+      }
+    }
+
+    .page_body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg_color);
+      color: var(--text_main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      transition: background-color 0.3s ease;
+    }
+
+    /* --- Компоненты --- */
+    .timer_card {
+      background-color: var(--card_bg);
+      padding: 32px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow_lg);
+      border: 1px solid var(--border_color);
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+
+    .timer_title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text_muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 24px;
+    }
+
+    /* Секция ввода */
+    .inputs_row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .input_unit {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .field_label {
+      font-size: 12px;
+      color: var(--text_muted);
+      font-weight: 600;
+    }
+
+    .number_input {
+      width: 80px;
+      padding: 12px;
+      border: 2px solid var(--border_color);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--text_main);
+      font-size: 20px;
+      text-align: center;
+      font-weight: 600;
+      outline: none;
+    }
+
+    .number_input:focus {
+      border-color: var(--accent_color);
+    }
+
+    .input_separator {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--border_color);
+      margin-top: 20px;
+    }
+
+    /* Табло */
+    .time_display {
+      margin-bottom: 32px;
+    }
+
+    .time_numbers {
+      font-size: 80px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    /* Кнопки */
+    .controls_layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn_full {
+      grid-column: span 2;
+    }
+
+    .btn_primary {
+      background-color: var(--accent_color);
+      color: white;
+    }
+
+    .btn_outline {
+      background-color: transparent;
+      border: 2px solid var(--border_color);
+      color: var(--text_main);
+    }
+
+    .btn_success {
+      background-color: var(--success_color);
+      color: white;
+    }
+
+    .is_hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body class="page_body">
+
+  <main class="timer_card">
+    <div class="timer_title">Smart Timer</div>
+
+    <!-- Ввод минут и секунд -->
+    <div class="inputs_row" id="setup_ui">
+      <div class="input_unit">
+        <label class="field_label">Мин</label>
+        <input type="number" id="inp_min" class="number_input" value="1" min="0" max="999">
+      </div>
+      
+      <div class="input_separator">:</div>
+
+      <div class="input_unit">
+        <label class="field_label">Сек</label>
+        <input type="number" id="inp_sec" class="number_input" value="0" min="0" max="59">
+      </div>
+    </div>
+
+    <!-- Табло -->
+    <div class="time_display">
+      <span class="time_numbers" id="display_val">01:00</span>
+    </div>
+
+    <!-- Управление -->
+    <div class="controls_layout">
+      <button id="btn_main" class="btn btn_primary btn_full">Запустить</button>
+      <button id="btn_reset" class="btn btn_outline is_hidden">Сброс</button>
+      <button id="btn_restart" class="btn btn_outline is_hidden">Повторить</button>
+      <button id="btn_ok" class="btn btn_success btn_full is_hidden">Остановить звук (ОК)</button>
+    </div>
+  </main>
+
+  <script>
+    // Глобальное состояние
+    let config = {
+      total_seconds: 0,
+      current_seconds: 0,
+      timer_interval: null,
+      is_active: false,
+      is_paused: false,
+      audio_ctx: null,
+      audio_interval: null
+    };
+
+    // Элементы
+    const el = {
+      min: document.getElementById('inp_min'),
+      sec: document.getElementById('inp_sec'),
+      display: document.getElementById('display_val'),
+      btn_main: document.getElementById('btn_main'),
+      btn_reset: document.getElementById('btn_reset'),
+      btn_restart: document.getElementById('btn_restart'),
+      btn_ok: document.getElementById('btn_ok'),
+      setup_ui: document.getElementById('setup_ui')
+    };
+
+    /**
+     * Форматирование времени и обновление заголовка
+     */
+    function update_view(s) {
+      const mins = Math.floor(s / 60);
+      const secs = s % 60;
+      const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      el.display.textContent = formatted;
+      
+      if (config.is_active && !config.is_paused) {
+        document.title = `(${formatted}) Таймер`;
+      } else if (config.is_paused) {
+        document.title = `[Пауза] ${formatted}`;
+      } else {
+        document.title = 'Таймер';
+      }
+    }
+
+    /**
+     * Звук через Web Audio API
+     */
+    function play_beep() {
+      if (!config.audio_ctx) config.audio_ctx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      if (config.audio_ctx.state === 'suspended') {
+        config.audio_ctx.resume();
+      }
+
+      const beep = () => {
+        const osc = config.audio_ctx.createOscillator();
+        const gain = config.audio_ctx.createGain();
+        osc.connect(gain);
+        gain.connect(config.audio_ctx.destination);
+        osc.frequency.value = 660;
+        gain.gain.setValueAtTime(0.1, config.audio_ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, config.audio_ctx.currentTime + 0.6);
+        osc.start();
+        osc.stop(config.audio_ctx.currentTime + 0.6);
+      };
+
+      beep();
+      config.audio_interval = setInterval(beep, 1200);
+    }
+
+    /**
+     * Уведомление на рабочем столе
+     */
+    function send_notification() {
+      if (Notification.permission === 'granted') {
+        const n = new Notification('Время вышло!', {
+          body: 'Закройте это уведомление (нажмите крестик), чтобы остановить звук',
+          requireInteraction: true, // Уведомление не исчезнет само
+          silent: true // Мы сами играем звук через Web Audio API
+        });
+
+        // Если пользователь нажал на само тело уведомления
+        n.onclick = () => {
+          window.focus();
+          stop_everything();
+          n.close();
+        };
+
+        // ЕСЛИ ПОЛЬЗОВАТЕЛЬ НАЖАЛ НА КРЕСТИК (закрыл уведомление)
+        n.onclose = () => {
+          stop_everything();
+        };
+      }
+    }
+
+    /**
+     * Основной цикл таймера
+     */
+    function start() {
+      if (!config.is_paused) {
+        const m = parseInt(el.min.value) || 0;
+        const s = parseInt(el.sec.value) || 0;
+        config.total_seconds = (m * 60) + s;
+        config.current_seconds = config.total_seconds;
+        
+        if (config.total_seconds <= 0) return;
+        
+        // Запрос прав на уведомления при старте
+        if (Notification.permission !== 'granted') {
+          Notification.requestPermission();
+        }
+      }
+
+      config.is_active = true;
+      config.is_paused = false;
+      
+      el.btn_main.textContent = 'Пауза';
+      el.btn_main.classList.replace('btn_primary', 'btn_outline');
+      el.setup_ui.classList.add('is_hidden');
+      el.btn_reset.classList.remove('is_hidden');
+      el.btn_restart.classList.remove('is_hidden');
+
+      config.timer_interval = setInterval(() => {
+        config.current_seconds--;
+        update_view(config.current_seconds);
+
+        if (config.current_seconds <= 0) {
+          finish();
+        }
+      }, 1000);
+    }
+
+    function pause() {
+      clearInterval(config.timer_interval);
+      config.is_paused = true;
+      el.btn_main.textContent = 'Продолжить';
+      el.btn_main.classList.replace('btn_outline', 'btn_primary');
+      update_view(config.current_seconds);
+    }
+
+    function finish() {
+      clearInterval(config.timer_interval);
+      config.is_active = false;
+      play_beep();
+      send_notification();
+      
+      el.btn_main.classList.add('is_hidden');
+      el.btn_reset.classList.add('is_hidden');
+      el.btn_restart.classList.add('is_hidden');
+      el.btn_ok.classList.remove('is_hidden');
+      document.title = '!!! ВРЕМЯ !!!';
+    }
+
+    function stop_everything() {
+      if (config.audio_interval) {
+        clearInterval(config.audio_interval);
+        config.audio_interval = null;
+      }
+      reset();
+    }
+
+    function reset() {
+      clearInterval(config.timer_interval);
+      if (config.audio_interval) {
+        clearInterval(config.audio_interval);
+        config.audio_interval = null;
+      }
+      
+      config.is_active = false;
+      config.is_paused = false;
+
+      el.setup_ui.classList.remove('is_hidden');
+      el.btn_main.classList.remove('is_hidden', 'btn_outline');
+      el.btn_main.classList.add('btn_primary');
+      el.btn_main.textContent = 'Запустить';
+      el.btn_reset.classList.add('is_hidden');
+      el.btn_restart.classList.add('is_hidden');
+      el.btn_ok.classList.add('is_hidden');
+
+      const m = parseInt(el.min.value) || 0;
+      const s = parseInt(el.sec.value) || 0;
+      update_view((m * 60) + s);
+    }
+
+    // Обработчики кнопок
+    el.btn_main.onclick = () => {
+      if (config.is_active && !config.is_paused) pause();
+      else start();
+    };
+
+    el.btn_reset.onclick = reset;
+    
+    el.btn_restart.onclick = () => {
+      clearInterval(config.timer_interval);
+      config.is_paused = false;
+      start();
+    };
+
+    el.btn_ok.onclick = stop_everything;
+
+    const sync_input = () => {
+      if (!config.is_active) {
+        const m = parseInt(el.min.value) || 0;
+        const s = parseInt(el.sec.value) || 0;
+        update_view((m * 60) + s);
+      }
+    };
+
+    el.min.oninput = sync_input;
+    el.sec.oninput = sync_input;
+
+  </script>
+</body>
+</html>
