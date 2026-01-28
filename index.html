@@ -282,7 +282,14 @@
   <!-- Окно истории -->
   <div id="history_modal" class="history_overlay">
     <div class="history_header">
-      <h2>История сессий</h2>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2>История сессий</h2>
+        <div style="display: flex; gap: 10px;">
+          <span class="view_history_btn" onclick="exportSessions()">Экспорт JSON</span>
+          <span class="view_history_btn" onclick="document.getElementById('import_file').click()">Импорт JSON</span>
+          <input type="file" id="import_file" style="display:none" accept=".json" onchange="importSessions(event)">
+        </div>
+      </div>
       <button class="btn btn_outline" onclick="toggleHistory(false)">Закрыть</button>
     </div>
     <div class="history_layout">
@@ -693,7 +700,44 @@ function renderFullHistory() {
       renderToday();
       triggerEmojiAnimation();
     };
+    // --- ИМПОРТ / ЭКСПОРТ ---
 
+    window.exportSessions = () => {
+      const data = localStorage.getItem('pomo_history') || '[]';
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pomo_sessions_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    window.importSessions = (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const content = e.target.result;
+          JSON.parse(content); // Простая проверка на валидность JSON
+
+          const confirmOverwrite = confirm("Внимание! Все текущие сессии будут безвозвратно удалены и заменены данными из файла. Продолжить?");
+          
+          if (confirmOverwrite) {
+            localStorage.setItem('pomo_history', content);
+            renderToday();
+            renderFullHistory();
+            alert("Данные успешно импортированы");
+          }
+        } catch (err) {
+          alert("Ошибка: Выбран некорректный файл JSON");
+        }
+        event.target.value = ''; // Сброс инпута
+      };
+      reader.readAsText(file);
+    };
   </script>
 
     <div id="manual_modal" class="history_overlay" style="display: none; align-items: center; justify-content: center;">
