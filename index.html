@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Таймер</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&display=swap" rel="stylesheet">
   <style>
     /* --- Сброс и базовые стили --- */
     * {
@@ -118,12 +119,68 @@
       margin-bottom: 32px;
     }
 
-    .time_numbers {
-      font-size: 80px;
-      font-weight: 800;
-      font-variant-numeric: tabular-nums;
-      line-height: 1;
-    }
+  .time_numbers {
+    font-family: 'Roboto Mono', monospace; /* Замена шрифта на Mono */
+    font-size: 80px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  /* Список сессий под таймером */
+  .today_sessions {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border_color);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .session_item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 10px;
+    color: var(--text_muted);
+    position: relative;
+  }
+  .session_check { font-size: 20px; cursor: default; }
+  .del_btn {
+    position: absolute;
+    top: -5px; right: -5px;
+    background: var(--danger_color);
+    color: white;
+    border-radius: 50%;
+    width: 14px; height: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px; cursor: pointer; border: none;
+  }
+
+  /* Анимация эмодзи */
+  .flying-emoji {
+    position: fixed;
+    bottom: 50%;
+    left: 50%;
+    font-size: 50px;
+    z-index: 9999;
+    pointer-events: none;
+    animation: flyUpAndFade 1.5s ease-out forwards;
+  }
+  @keyframes flyUpAndFade {
+    0% { transform: translate(-50%, 0) scale(0.5); opacity: 0; }
+    30% { transform: translate(-50%, -100px) scale(1.2); opacity: 1; }
+    100% { transform: translate(-50%, -250px) scale(1); opacity: 0; }
+  }
+
+  /* Стили для Истории */
+  .history_overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg_color); z-index: 100;
+    padding: 20px; overflow-y: auto; display: none;
+  }
+  .history_header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .history_day { margin-bottom: 15px; text-align: left; }
+  .view_history_btn { margin-top: 15px; font-size: 12px; color: var(--accent_color); cursor: pointer; text-decoration: underline; }
 
     /* Кнопки */
     .controls_layout {
@@ -174,7 +231,7 @@
 <body class="page_body">
 
   <main class="timer_card">
-    <div class="timer_title">Smart Timer</div>
+    <div class="timer_title">Simple Timer</div>
 
     <!-- Ввод минут и секунд -->
     <div class="inputs_row" id="setup_ui">
@@ -203,7 +260,23 @@
       <button id="btn_restart" class="btn btn_outline is_hidden">Повторить</button>
       <button id="btn_ok" class="btn btn_success btn_full is_hidden">Остановить звук (ОК)</button>
     </div>
+
+    <div id="focus_stats" style="margin-top: 24px; font-size: 14px; font-weight: 600;"></div>
+    <div id="today_list" class="today_sessions"></div>
+    <!-- Новая кнопка -->
+    <div class="view_history_btn" style="margin-bottom: 8px;" onclick="toggleManual(true)">Добавить вручную</div>
+    <div class="view_history_btn" onclick="toggleHistory(true)">История всех дней</div>
   </main>
+
+  <!-- Окно истории -->
+  <div id="history_modal" class="history_overlay">
+    <div class="history_header">
+      <h2>История сессий</h2>
+      <button class="btn btn_outline" onclick="toggleHistory(false)">Закрыть</button>
+    </div>
+    <div id="history_content"></div>
+  </div>
+
 
   <script>
     // Глобальное состояние
@@ -302,6 +375,7 @@
      * Основной цикл таймера
      */
     function start() {
+      clearInterval(config.timer_interval); // Очистка старого интервала перед запуском нового
       if (!config.is_paused) {
         const m = parseInt(el.min.value) || 0;
         const s = parseInt(el.sec.value) || 0;
@@ -343,9 +417,10 @@
       update_view(config.current_seconds);
     }
 
-    function finish() {
+function finish() {
       clearInterval(config.timer_interval);
       config.is_active = false;
+      saveSessionRecord(); // Сохраняем строго один раз при срабатывании
       play_beep();
       send_notification();
       
@@ -355,6 +430,95 @@
       el.btn_ok.classList.remove('is_hidden');
       document.title = '!!! ВРЕМЯ !!!';
     }
+
+    function saveSessionRecord() {
+      const now = new Date();
+      const session = {
+        id: Date.now(),
+        date: now.toISOString(),
+        dateStr: now.toLocaleDateString(),
+        timeStr: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        duration: Math.round(config.total_seconds / 60) + 'м'
+      };
+      const history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
+      history.push(session);
+      localStorage.setItem('pomo_history', JSON.stringify(history));
+      
+      triggerEmojiAnimation();
+      renderToday();
+    }
+
+    function triggerEmojiAnimation() {
+      const emoji = document.createElement('div');
+      emoji.className = 'flying-emoji';
+      emoji.textContent = '✅';
+      document.body.appendChild(emoji);
+      setTimeout(() => emoji.remove(), 1500);
+    }
+
+    function renderToday() {
+      const history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
+      const todayStr = new Date().toLocaleDateString();
+      const container = document.getElementById('today_list');
+      
+      const todaySessions = history.filter(s => s.dateStr === todayStr);
+      
+      // --- Расчет агрегированной статистики ---
+      const totalMinutes = todaySessions.reduce((acc, s) => acc + parseInt(s.duration), 0);
+      const statsElem = document.getElementById('focus_stats');
+      if (totalMinutes > 0) {
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        const timeString = h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+        statsElem.textContent = `Вы сфокусированы сегодня: ${timeString}`;
+      } else {
+        statsElem.textContent = '';
+      }
+      // ----------------------------------------
+
+      container.innerHTML = todaySessions
+        .map(s => `
+          <div class="session_item">
+            <span class="session_check">✅</span>
+            <span>${s.duration}</span>
+            <button class="del_btn" onclick="deleteSession(${s.id})">×</button>
+          </div>
+        `).join('');
+    }
+
+    window.deleteSession = (id) => {
+      let history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
+      history = history.filter(s => s.id !== id);
+      localStorage.setItem('pomo_history', JSON.stringify(history));
+      renderToday();
+    };
+
+    window.toggleHistory = (show) => {
+      const modal = document.getElementById('history_modal');
+      modal.style.display = show ? 'block' : 'none';
+      if (show) renderFullHistory();
+    };
+
+    function renderFullHistory() {
+      const history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
+      const content = document.getElementById('history_content');
+      
+      // Группировка по датам
+      const groups = history.reduce((acc, s) => {
+        acc[s.dateStr] = acc[s.dateStr] || [];
+        acc[s.dateStr].push(s);
+        return acc;
+      }, {});
+
+      content.innerHTML = Object.keys(groups).reverse().map(date => `
+        <div class="history_day">
+          <strong>${date}</strong>
+          <div>${groups[date].map(s => `✅ ${s.timeStr} (${s.duration})`).join(' ')}</div>
+        </div>
+      `).join('');
+    }
+
+    // --- МОДИФИКАЦИЯ СУЩЕСТВУЮЩИХ ФУНКЦИЙ ---
 
     function stop_everything() {
       if (config.audio_interval) {
@@ -413,9 +577,49 @@
 
     el.min.oninput = sync_input;
     el.sec.oninput = sync_input;
+    renderToday();
+
+        window.toggleManual = (show) => {
+      const modal = document.getElementById('manual_modal');
+      modal.style.display = show ? 'flex' : 'none';
+      if (show) document.getElementById('manual_mins').focus();
+    };
+
+    // Сохранение ручной сессии
+    window.addManualSession = () => {
+      const mins = parseInt(document.getElementById('manual_mins').value);
+      if (!mins || mins <= 0) return;
+
+      const now = new Date();
+      const session = {
+        id: Date.now(),
+        date: now.toISOString(),
+        dateStr: now.toLocaleDateString(),
+        timeStr: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        duration: mins + 'м'
+      };
+
+      const history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
+      history.push(session);
+      localStorage.setItem('pomo_history', JSON.stringify(history));
+      
+      toggleManual(false);
+      renderToday();
+      triggerEmojiAnimation();
+    };
 
   </script>
+
+    <div id="manual_modal" class="history_overlay" style="display: none; align-items: center; justify-content: center;">
+    <div class="timer_card" style="margin: auto;">
+      <div class="timer_title">Добавить минуты</div>
+      <input type="number" id="manual_mins" class="number_input" value="25" style="margin-bottom: 20px; width: 100%;">
+      <div class="controls_layout">
+        <button class="btn btn_primary" onclick="addManualSession()">Добавить</button>
+        <button class="btn btn_outline" onclick="toggleManual(false)">Отмена</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
-
-
