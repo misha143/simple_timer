@@ -364,28 +364,43 @@
      * Звук через Web Audio API
      */
     function play_beep() {
-      // Контекст уже должен быть создан в start(), но на случай сбоя пробуем создать
-      if (!config.audio_ctx) config.audio_ctx = new (window.AudioContext || window.webkitAudioContext)();
-      
-      // Важно: здесь resume() может не сработать, если вызов идет из setInterval без клика,
-      // поэтому мы полагаемся на initAudioContext в функции start()
-      
+      // Гарантируем наличие контекста
+      if (!config.audio_ctx) {
+        config.audio_ctx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
       const beep = () => {
-        // Проверка состояния перед созданием осциллятора
-        if (config.audio_ctx.state === 'running') {
-            const osc = config.audio_ctx.createOscillator();
-            const gain = config.audio_ctx.createGain();
-            osc.connect(gain);
-            gain.connect(config.audio_ctx.destination);
-            osc.frequency.value = 660;
-            gain.gain.setValueAtTime(0.1, config.audio_ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, config.audio_ctx.currentTime + 0.6);
-            osc.start();
-            osc.stop(config.audio_ctx.currentTime + 0.6);
+        // КРИТИЧНО: Пытаемся разбудить контекст, если он уснул
+        if (config.audio_ctx.state === 'suspended') {
+          config.audio_ctx.resume().then(() => {
+            // Рекурсивный вызов или просто продолжение, 
+            // но для простоты лучше просто запускать осциллятор после resume
+            runOscillator();
+          }).catch(e => console.log(e));
+        } else {
+          runOscillator();
         }
       };
 
+      const runOscillator = () => {
+        const osc = config.audio_ctx.createOscillator();
+        const gain = config.audio_ctx.createGain();
+        osc.connect(gain);
+        gain.connect(config.audio_ctx.destination);
+        
+        osc.frequency.value = 660;
+        // Важно: используем currentTime безопасно
+        const now = config.audio_ctx.currentTime;
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+        
+        osc.start(now);
+        osc.stop(now + 0.6);
+      };
+
+      // Первый писк
       beep();
+      // Цикл писков
       config.audio_interval = setInterval(beep, 1200);
     }
 
@@ -425,6 +440,10 @@
         config.audio_ctx.resume();
       }
     }
+    function toggleInputs(disabled) {
+      el.min.disabled = disabled;
+      el.sec.disabled = disabled;
+    }
 
     function start() {
       clearInterval(config.timer_interval);
@@ -451,6 +470,8 @@
 
       config.is_active = true;
       config.is_paused = false;
+
+      toggleInputs(true);
       
       el.btn_main.textContent = 'Пауза';
       el.btn_main.classList.replace('btn_primary', 'btn_outline');
@@ -701,6 +722,8 @@ function renderFullHistory() {
       config.is_active = false;
       config.is_paused = false;
       config.endTime = 0; // Сброс
+      toggleInputs(false);
+
 
       el.setup_ui.classList.remove('is_hidden');
       el.btn_main.classList.remove('is_hidden', 'btn_outline');
@@ -818,30 +841,42 @@ window.addManualSession = () => {
     };
 
     window.importSessions = (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
+  const file = event.target.files[0];
+  if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target.result;
-          JSON.parse(content); // Простая проверка на валидность JSON
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const content = e.target.result;
+      const data = JSON.parse(content);
 
-          const confirmOverwrite = confirm("Внимание! Все текущие сессии будут безвозвратно удалены и заменены данными из файла. Продолжить?");
-          
-          if (confirmOverwrite) {
-            localStorage.setItem('pomo_history', content);
-            renderToday();
-            renderFullHistory();
-            alert("Данные успешно импортированы");
-          }
-        } catch (err) {
-          alert("Ошибка: Выбран некорректный файл JSON");
-        }
-        event.target.value = ''; // Сброс инпута
-      };
-      reader.readAsText(file);
-    };
+      // КРИТИЧНО: Проверка, что это массив
+      if (!Array.isArray(data)) {
+        throw new Error("Файл должен содержать массив данных (JSON Array)");
+      }
+
+      // Опционально: проверка структуры элементов, чтобы не сломать рендер
+      const isValid = data.every(item => item && typeof item === 'object' && item.duration);
+      if (!isValid) {
+        throw new Error("Структура данных в файле некорректна (отсутствуют обязательные поля)");
+      }
+
+      const confirmOverwrite = confirm("Внимание! Все текущие сессии будут удалены. Продолжить?");
+      
+      if (confirmOverwrite) {
+        localStorage.setItem('pomo_history', JSON.stringify(data)); // Сохраняем уже проверенный объект, а не сырую строку
+        renderToday();
+        renderFullHistory();
+        alert("Данные успешно импортированы");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Ошибка импорта: " + err.message);
+    }
+    event.target.value = ''; 
+  };
+  reader.readAsText(file);
+};
   </script>
 
     <div id="manual_modal" class="history_overlay" style="display: none; align-items: center; justify-content: center;">
