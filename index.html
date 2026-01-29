@@ -703,6 +703,28 @@ function renderFullHistory() {
     el.sec.oninput = sync_input;
     renderToday();
 
+    // --- Логика отслеживания наступления нового дня ---
+    let lastRenderedDate = new Date().toLocaleDateString();
+
+    function checkAndRefreshDay() {
+      const currentDate = new Date().toLocaleDateString();
+      if (currentDate !== lastRenderedDate) {
+        lastRenderedDate = currentDate;
+        renderToday();
+        console.log("Новый день наступил, список очищен");
+      }
+    }
+
+    // Проверка каждые 15 минут
+    setInterval(checkAndRefreshDay, 15 * 60 * 1000);
+
+    // Дополнительная проверка при активации вкладки (после сна или переключения окон)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        checkAndRefreshDay();
+      }
+    });
+
         window.toggleManual = (show) => {
       const modal = document.getElementById('manual_modal');
       modal.style.display = show ? 'flex' : 'none';
