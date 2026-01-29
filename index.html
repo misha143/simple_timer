@@ -309,7 +309,7 @@
     // Глобальное состояние
     let config = {
       total_seconds: 0,
-      current_seconds: 0,
+      endTime: 0, // Добавлено: метка времени окончания
       timer_interval: null,
       is_active: false,
       is_paused: false,
@@ -414,26 +414,38 @@
       }
     }
 
-    /**
-     * Основной цикл таймера
-     */
-    function start() {
+    function initAudioContext() {
+      if (!config.audio_ctx) {
+        config.audio_ctx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (config.audio_ctx.state === 'suspended') {
+        config.audio_ctx.resume();
+      }
+    }
+    
+function start() {
       clearInterval(config.timer_interval);
+      
+      // Запрашиваем права явно при клике (важно для Android/Chrome)
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+
       if (!config.is_paused) {
         const m = parseInt(el.min.value) || 0;
         const s = parseInt(el.sec.value) || 0;
         config.total_seconds = (m * 60) + s;
-        config.current_seconds = config.total_seconds;
         
         if (config.total_seconds <= 0) return;
 
-        // Воспроизводим звук старта
+        // Устанавливаем целевое время: Сейчас + Длительность
+        config.endTime = Date.now() + (config.total_seconds * 1000);
+
         soundGo.play().catch(e => console.log("Audio play blocked"));
-        
-        // Запрос прав на уведомления при старте
-        if (Notification.permission !== 'granted') {
-          Notification.requestPermission();
-        }
+      } else {
+        // Если снимаем с паузы, пересчитываем endTime на основе остатка
+        // (config.remaining_seconds сохраняем при паузе)
+        config.endTime = Date.now() + (config.remaining_seconds * 1000);
       }
 
       config.is_active = true;
@@ -446,21 +458,28 @@
       el.btn_restart.classList.remove('is_hidden');
 
       config.timer_interval = setInterval(() => {
-        config.current_seconds--;
-        update_view(config.current_seconds);
+        const now = Date.now();
+        const left = Math.ceil((config.endTime - now) / 1000);
+        
+        // Сохраняем для паузы
+        config.remaining_seconds = left;
 
-        if (config.current_seconds <= 0) {
+        if (left <= 0) {
+          update_view(0);
           finish();
+        } else {
+          update_view(left);
         }
-      }, 1000);
+      }, 200); // Проверяем чаще, чтобы не пропустить 0
     }
 
     function pause() {
       clearInterval(config.timer_interval);
       config.is_paused = true;
+      // config.remaining_seconds уже обновлен в интервале
       el.btn_main.textContent = 'Продолжить';
       el.btn_main.classList.replace('btn_outline', 'btn_primary');
-      update_view(config.current_seconds);
+      update_view(config.remaining_seconds);
     }
 
 function finish() {
@@ -468,8 +487,12 @@ function finish() {
       config.is_active = false;
       saveSessionRecord(); 
       
+      // Вибрация для Android (200мс вибро, 100мс пауза, 200мс вибро)
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 500]);
+      }
+
       c4_explode1.play().catch(e => console.log("Audio play blocked"));
-      // Воспроизводим победный звук один раз
       soundWin.play().catch(e => console.log("Audio play blocked"));
       
       play_beep();
@@ -658,6 +681,7 @@ function renderFullHistory() {
       
       config.is_active = false;
       config.is_paused = false;
+      config.endTime = 0; // Сброс
 
       el.setup_ui.classList.remove('is_hidden');
       el.btn_main.classList.remove('is_hidden', 'btn_outline');
