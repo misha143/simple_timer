@@ -408,25 +408,29 @@
      * Уведомление на рабочем столе
      */
     function send_notification() {
-  if (Notification.permission === 'granted') {
-    try {
-      const n = new Notification('Время вышло!', {
-        body: 'Таймер завершён — вернитесь в браузер',
-        tag: 'timer_finished'
-        // Убраны: requireInteraction и silent — они мешают на Windows
-      });
+      if (Notification.permission === 'granted') {
+        // Проверяем поддержку конструктора (на всякий случай для старых Android Webview)
+        try {
+          const n = new Notification('Время вышло!', {
+            body: 'Нажмите, чтобы остановить таймер',
+            requireInteraction: true, 
+            silent: true,
+            tag: 'timer_finished' // Добавляем тег, чтобы не дублировать уведомления
+          });
 
-      n.onclick = () => {
-        window.focus();
-        triggerEmojiAnimation();
-        stop_everything();
-        n.close();
-      };
-    } catch (e) {
-      console.log('Notification error:', e);
+          // Если пользователь нажал на само уведомление — останавливаем
+          n.onclick = () => {
+            window.focus();
+            triggerEmojiAnimation();
+            stop_everything();
+            n.close();
+          };
+
+        } catch (e) {
+          console.log('Notification error:', e);
+        }
+      }
     }
-  }
-}
 
     function initAudioContext() {
       if (!config.audio_ctx) {
