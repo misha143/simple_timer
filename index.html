@@ -534,7 +534,7 @@ function finish() {
             <button class="del_btn" onclick="deleteSession(${s.id})">×</button>
           </div>
         `).join('');
-    }
+    } 
 
     window.deleteSession = (id) => {
       let history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
