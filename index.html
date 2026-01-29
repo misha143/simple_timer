@@ -364,22 +364,25 @@
      * Звук через Web Audio API
      */
     function play_beep() {
+      // Контекст уже должен быть создан в start(), но на случай сбоя пробуем создать
       if (!config.audio_ctx) config.audio_ctx = new (window.AudioContext || window.webkitAudioContext)();
       
-      if (config.audio_ctx.state === 'suspended') {
-        config.audio_ctx.resume();
-      }
-
+      // Важно: здесь resume() может не сработать, если вызов идет из setInterval без клика,
+      // поэтому мы полагаемся на initAudioContext в функции start()
+      
       const beep = () => {
-        const osc = config.audio_ctx.createOscillator();
-        const gain = config.audio_ctx.createGain();
-        osc.connect(gain);
-        gain.connect(config.audio_ctx.destination);
-        osc.frequency.value = 660;
-        gain.gain.setValueAtTime(0.1, config.audio_ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, config.audio_ctx.currentTime + 0.6);
-        osc.start();
-        osc.stop(config.audio_ctx.currentTime + 0.6);
+        // Проверка состояния перед созданием осциллятора
+        if (config.audio_ctx.state === 'running') {
+            const osc = config.audio_ctx.createOscillator();
+            const gain = config.audio_ctx.createGain();
+            osc.connect(gain);
+            gain.connect(config.audio_ctx.destination);
+            osc.frequency.value = 660;
+            gain.gain.setValueAtTime(0.1, config.audio_ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, config.audio_ctx.currentTime + 0.6);
+            osc.start();
+            osc.stop(config.audio_ctx.currentTime + 0.6);
+        }
       };
 
       beep();
@@ -422,11 +425,12 @@
         config.audio_ctx.resume();
       }
     }
-    
-function start() {
+
+    function start() {
       clearInterval(config.timer_interval);
       
-      // Запрашиваем права явно при клике (важно для Android/Chrome)
+      initAudioContext();
+
       if (Notification.permission === 'default') {
         Notification.requestPermission();
       }
@@ -438,13 +442,10 @@ function start() {
         
         if (config.total_seconds <= 0) return;
 
-        // Устанавливаем целевое время: Сейчас + Длительность
         config.endTime = Date.now() + (config.total_seconds * 1000);
 
-        soundGo.play().catch(e => console.log("Audio play blocked"));
+        soundGo.play().catch(e => console.log("Audio play blocked (user interaction needed)"));
       } else {
-        // Если снимаем с паузы, пересчитываем endTime на основе остатка
-        // (config.remaining_seconds сохраняем при паузе)
         config.endTime = Date.now() + (config.remaining_seconds * 1000);
       }
 
@@ -461,7 +462,6 @@ function start() {
         const now = Date.now();
         const left = Math.ceil((config.endTime - now) / 1000);
         
-        // Сохраняем для паузы
         config.remaining_seconds = left;
 
         if (left <= 0) {
@@ -470,7 +470,7 @@ function start() {
         } else {
           update_view(left);
         }
-      }, 200); // Проверяем чаще, чтобы не пропустить 0
+      }, 200);
     }
 
     function pause() {
@@ -507,13 +507,22 @@ function finish() {
 
     function saveSessionRecord() {
       const now = new Date();
+      // FIX: Добавляем isoDateKey для корректной сортировки независимо от локали
+      // Формируем YYYY-MM-DD вручную, чтобы избежать проблем с часовыми поясами ISO строки
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const isoDateKey = `${year}-${month}-${day}`;
+
       const session = {
         id: Date.now(),
-        date: now.toISOString(),
-        dateStr: now.toLocaleDateString(),
+        date: now.toISOString(), // Полная метка для истории
+        isoDateKey: isoDateKey,  // Ключ для группировки (FIX)
+        dateStr: now.toLocaleDateString(), // Для отображения пользователю
         timeStr: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         duration: Math.round(config.total_seconds / 60) + 'м'
       };
+      
       const history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
       history.push(session);
       localStorage.setItem('pomo_history', JSON.stringify(history));
@@ -627,40 +636,50 @@ function initHistoryChart(dates, values) {
     }
 
 function renderFullHistory() {
-  const history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
-  const content = document.getElementById('history_content');
-  
-  // Группировка по датам и расчет суммы
-  const groups = history.reduce((acc, s) => {
-    acc[s.dateStr] = acc[s.dateStr] || { sessions: [], total: 0 };
-    acc[s.dateStr].sessions.push(s);
-    acc[s.dateStr].total += parseInt(s.duration) || 0;
-    return acc;
-  }, {});
+      const history = JSON.parse(localStorage.getItem('pomo_history') || '[]');
+      const content = document.getElementById('history_content');
+      
+      // Группировка
+      const groups = history.reduce((acc, s) => {
+        // FIX: Обратная совместимость для старых записей без isoDateKey
+        let key = s.isoDateKey;
+        if (!key) {
+           // Пытаемся восстановить из полной даты или падаем обратно на dateStr (для совсем старых)
+           try {
+             key = s.date ? s.date.split('T')[0] : s.dateStr;
+           } catch(e) { key = s.dateStr; }
+        }
 
-  const sortedDates = Object.keys(groups).sort((a, b) => {
-      // Сортировка для списка (обратная хронология)
-      return new Date(b.split('.').reverse().join('-')) - new Date(a.split('.').reverse().join('-'));
-  });
+        acc[key] = acc[key] || { sessions: [], total: 0, displayDate: s.dateStr };
+        acc[key].sessions.push(s);
+        acc[key].total += parseInt(s.duration) || 0;
+        // Обновляем отображаемую дату на случай, если ключ был восстановлен
+        if(s.dateStr) acc[key].displayDate = s.dateStr; 
+        
+        return acc;
+      }, {});
 
-  content.innerHTML = sortedDates.map(date => {
-    const dayData = groups[date];
-    return `
-      <div class="history_day">
-        <strong>${date} — ${formatMinutes(dayData.total)}</strong>
-        <div>${dayData.sessions.map(s => `✅ ${s.timeStr} (${s.duration})`).join(' ')}</div>
-      </div>
-    `;
-  }).join('');
+      // FIX: Сортировка теперь использует строковое сравнение ISO ключей (YYYY-MM-DD)
+      // Это работает корректно в любой локали.
+      const sortedKeys = Object.keys(groups).sort((a, b) => b.localeCompare(a)); // Свежие сверху
 
-  // Подготовка данных для графика (хронологический порядок)
-  const chartDates = Object.keys(groups).sort((a, b) => {
-      return new Date(a.split('.').reverse().join('-')) - new Date(b.split('.').reverse().join('-'));
-  });
-  const chartValues = chartDates.map(date => groups[date].total);
+      content.innerHTML = sortedKeys.map(key => {
+        const dayData = groups[key];
+        return `
+          <div class="history_day">
+            <strong>${dayData.displayDate} — ${formatMinutes(dayData.total)}</strong>
+            <div>${dayData.sessions.map(s => `✅ ${s.timeStr} (${s.duration})`).join(' ')}</div>
+          </div>
+        `;
+      }).join('');
 
-  initHistoryChart(chartDates, chartValues);
-}
+      // Подготовка данных для графика (Хронологический порядок: старые -> новые)
+      const chartKeys = [...sortedKeys].reverse(); 
+      const chartDates = chartKeys.map(k => groups[k].displayDate); // Для подписей оси X берем человекочитаемую
+      const chartValues = chartKeys.map(k => groups[k].total);
+
+      initHistoryChart(chartDates, chartValues);
+    }
 
     // --- МОДИФИКАЦИЯ СУЩЕСТВУЮЩИХ ФУНКЦИЙ ---
 
@@ -756,14 +775,22 @@ function renderFullHistory() {
     };
 
     // Сохранение ручной сессии
-    window.addManualSession = () => {
+window.addManualSession = () => {
       const mins = parseInt(document.getElementById('manual_mins').value);
       if (!mins || mins <= 0) return;
 
       const now = new Date();
+      
+      // FIX: Генерация ключа YYYY-MM-DD
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const isoDateKey = `${year}-${month}-${day}`;
+
       const session = {
         id: Date.now(),
         date: now.toISOString(),
+        isoDateKey: isoDateKey, // FIX
         dateStr: now.toLocaleDateString(),
         timeStr: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         duration: mins + 'м'
