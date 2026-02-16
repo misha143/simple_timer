@@ -234,6 +234,35 @@
     .is_hidden {
       display: none !important;
     }
+        .quick_actions {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin: 16px 0;
+      flex-wrap: wrap;
+    }
+
+    .btn_mini {
+      padding: 8px 14px;
+      border: 1px solid var(--border_color);
+      border-radius: 20px;
+      background: var(--bg_color);
+      color: var(--text_muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn_mini:hover {
+      border-color: var(--accent_color);
+      color: var(--accent_color);
+      transform: translateY(-1px);
+    }
+    
+    .btn_mini.manual {
+      border-style: dashed;
+    }
   </style>
 
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
@@ -274,8 +303,16 @@
 
     <div id="focus_stats" style="margin-top: 24px; font-size: 14px; font-weight: 600;"></div>
     <div id="today_list" class="today_sessions"></div>
-    <!-- Новая кнопка -->
-    <div class="view_history_btn" style="margin-bottom: 8px;" onclick="toggleManual(true)">Добавить вручную</div>
+    
+    <!-- Панель быстрого добавления -->
+    <div class="quick_actions">
+      <button class="btn_mini" onclick="quickAdd(25)">+25м</button>
+      <button class="btn_mini" onclick="quickAdd(15)">+15м</button>
+      <button class="btn_mini" onclick="quickAdd(10)">+10м</button>
+      <button class="btn_mini" onclick="quickAdd(5)">+5м</button>
+      <button class="btn_mini manual" onclick="toggleManual(true)">Вручную...</button>
+    </div>
+
     <div class="view_history_btn" onclick="toggleHistory(true)">История всех дней</div>
   </main>
 
@@ -800,14 +837,11 @@ function renderFullHistory() {
       if (show) document.getElementById('manual_mins').focus();
     };
 
-    // Сохранение ручной сессии
-window.addManualSession = () => {
-      const mins = parseInt(document.getElementById('manual_mins').value);
+    // Общая функция сохранения (Logic Core)
+    function saveLog(mins) {
       if (!mins || mins <= 0) return;
 
       const now = new Date();
-      
-      // FIX: Генерация ключа YYYY-MM-DD
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
@@ -816,7 +850,7 @@ window.addManualSession = () => {
       const session = {
         id: Date.now(),
         date: now.toISOString(),
-        isoDateKey: isoDateKey, // FIX
+        isoDateKey: isoDateKey,
         dateStr: now.toLocaleDateString(),
         timeStr: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         duration: mins + 'м'
@@ -826,11 +860,25 @@ window.addManualSession = () => {
       history.push(session);
       localStorage.setItem('pomo_history', JSON.stringify(history));
       
-      toggleManual(false);
       renderToday();
       triggerEmojiAnimation();
+    }
+
+    // Быстрое добавление через кнопки
+    window.quickAdd = (mins) => {
+      saveLog(mins);
     };
-    // --- ИМПОРТ / ЭКСПОРТ ---
+
+    // Добавление через модальное окно
+    window.addManualSession = () => {
+      const input = document.getElementById('manual_mins');
+      const mins = parseInt(input.value);
+      
+      if (mins > 0) {
+        saveLog(mins);
+        toggleManual(false);
+      }
+    };
 
     window.exportSessions = () => {
       const data = localStorage.getItem('pomo_history') || '[]';
