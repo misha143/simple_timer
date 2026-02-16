@@ -664,7 +664,16 @@ function initHistoryChart(dates, values) {
 
       const option = {
         backgroundColor: 'transparent',
-        tooltip: { trigger: 'axis', formatter: '{b}: {c} мин' },
+        tooltip: { 
+          trigger: 'axis', 
+          formatter: function(params) {
+            const val = params[0].value;
+            const h = Math.floor(val / 60);
+            const m = val % 60;
+            const timeStr = h > 0 ? `${h}ч ${m}м` : `${m}м`;
+            return `${params[0].name}: <b>${timeStr}</b>`;
+          }
+        },
         grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
         xAxis: {
           type: 'category',
@@ -673,7 +682,20 @@ function initHistoryChart(dates, values) {
         },
         yAxis: {
           type: 'value',
-          name: 'Минуты',
+          name: 'Время',
+          min: 0,
+          interval: 30, // Явно задаем шаг в 30 минут
+          axisLabel: { 
+            color: '#64748b',
+            formatter: function (value) {
+              const h = Math.floor(value / 60);
+              const m = value % 60;
+              if (value === 0) return '0';
+              if (h > 0 && m > 0) return h + 'ч 30м';
+              if (h > 0) return h + 'ч';
+              return m + 'м';
+            }
+          },
           splitLine: { lineStyle: { type: 'dashed', color: '#334155' } }
         },
         dataZoom: [
